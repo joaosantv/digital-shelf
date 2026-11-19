@@ -1,0 +1,42 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Valida os campos enviados por BacklogGameModel.toFirestore().
+    function hasValidBacklogFields(data) {
+      return data.keys().hasAll(['ownerId', 'title', 'status'])
+        && data.ownerId is string
+        && data.ownerId.size() > 0
+        && data.title is string
+        && data.title.trim().size() > 0
+        && data.title.size() <= 150
+        && data.status is string
+        && data.status in ['Quero jogar', 'Jogando', 'Zerado']
+        && (!('targetPrice' in data) || data.targetPrice == null || (data.targetPrice is number && data.targetPrice >= 0))
+        && (!('notes' in data) || data.notes is string)
+        && (!('coverUrl' in data) || data.coverUrl is string)
+        && (!('localPhotoPath' in data) || data.localPhotoPath == null || data.localPhotoPath is string)
+        && (!('updatedAt' in data) || data.updatedAt is string || data.updatedAt is timestamp);
+    }
+
+    // Coleção isolada por usuário autenticado via ownerId.
+    match /backlog_games/{gameId} {
+      allow read, delete: if request.auth != null
+        && request.auth.uid == resource.data.ownerId;
+
+      allow create: if request.auth != null
+        && request.resource.data.ownerId == request.auth.uid
+        && hasValidBacklogFields(request.resource.data);
+
+      allow update: if request.auth != null
+        && request.auth.uid == resource.data.ownerId
+        && request.resource.data.ownerId == resource.data.ownerId
+        && hasValidBacklogFields(request.resource.data);
+    }
+
+    // Bloqueia acesso por padrão a qualquer outra coleção não declarada.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
